@@ -80,3 +80,29 @@ if district_input:
         st_folium(m, width=350, height=300)
     
     st.success("Zero Hunger v1.2: Trends + Map online. The Creator provides vision.")
+    # 30-Day Price Forecast with Prophet
+from prophet import Prophet
+import pandas as pd
+
+st.subheader("30-Day Price Forecast")
+
+# Use your existing dataframe - rename columns for Prophet
+df_prophet = df[['date', 'price']].rename(columns={'date': 'ds', 'price': 'y'})
+
+# Filter for one crop + district so it trains fast
+selected_crop = st.selectbox("Select crop to forecast", df['crop'].unique())
+df_prophet = df[df['crop'] == selected_crop][['date', 'price']].rename(columns={'date': 'ds', 'price': 'y'})
+
+# Train + predict
+m = Prophet(daily_seasonality=True)
+m.fit(df_prophet)
+future = m.make_future_dataframe(periods=30)
+forecast = m.predict(future)
+
+# Show forecast chart
+fig = m.plot(forecast)
+st.pyplot(fig)
+
+# Show next 30-day price
+next_30 = forecast[['ds', 'yhat']].tail(30)
+st.write(f"Predicted price in 30 days: UGX {next_30['yhat'].iloc[-1]:.0f}")
