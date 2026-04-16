@@ -25,34 +25,27 @@ df_district = df[df['district'] == district_input].copy()
 # 30-Day Price Forecast with Prophet
 st.subheader("30-Day Price Forecast")
 
-# Debug: shows your real column names on the live app
-st.write("Your columns:", df.columns.tolist())
+# These are your actual columns from the screenshot
+crop_options = ['maize_kg', 'beans_kg', 'matooke_bunch']
+selected_crop = st.selectbox("Select crop to forecast", crop_options)
 
-# Prophet needs 'ds' and 'y'. CHANGE THESE 3 LINES after you see "Your columns:" above
-date_col = 'date'      # <- change to your actual date column
-price_col = 'price'    # <- change to your actual price column  
-crop_col = 'crop'      # <- change to your actual crop/commodity column
+# Build Prophet dataframe: 'month' is your date, selected_crop is your price
+df_prophet = df_district[['month', selected_crop]].rename(columns={'month': 'ds', selected_crop: 'y'})
 
-# Crop dropdown - uses the crop_col you set above
-selected_crop = st.selectbox("Select crop to forecast", df_district[crop_col].unique())
-
-# Filter data for selected crop + rename columns for Prophet
-df_prophet = df_district[df_district[crop_col] == selected_crop][[date_col, price_col]].rename(columns={date_col: 'ds', price_col: 'y'})
-
-# Make sure date is datetime format
+# Convert month to datetime. If your months are like "2024-01", this works. If just "January", we fix next.
 df_prophet['ds'] = pd.to_datetime(df_prophet['ds'])
 df_prophet = df_prophet.dropna()
 
 if len(df_prophet) < 2:
-    st.error("Not enough data points for this crop/district to forecast. Need at least 2 records.")
+    st.error("Not enough data points for this crop/district to forecast. Need at least 2 months.")
     st.stop()
 else:
     # Train Prophet model
-    m = Prophet(daily_seasonality=True)
+    m = Prophet(yearly_seasonality=True)
     m.fit(df_prophet)
     
     # Predict 30 days into future
-    future = m.make_future_dataframe(periods=30)
+    future = m.make_future_dataframe(periods=30, freq='D')
     forecast = m.predict(future)
     
     # Show forecast chart
