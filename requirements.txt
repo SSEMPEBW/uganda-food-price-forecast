@@ -1,7 +1,7 @@
 streamlit
 pandas
-prophet
 plotly
 matplotlib
 folium
 streamlit-folium
+prophet==1.1.5
