@@ -19,20 +19,13 @@ except FileNotFoundError:
 district_list = df['district'].unique()
 district_input = st.selectbox("Select district to forecast", district_list)
 
-# Filter by district first
 df_district = df[df['district'] == district_input].copy()
 
-# 30-Day Price Forecast with Prophet
 st.subheader("30-Day Price Forecast")
-
-# These are your actual columns from the screenshot
 crop_options = ['maize_kg', 'beans_kg', 'matooke_bunch']
 selected_crop = st.selectbox("Select crop to forecast", crop_options)
 
-# Build Prophet dataframe: 'month' is your date, selected_crop is your price
 df_prophet = df_district[['month', selected_crop]].rename(columns={'month': 'ds', selected_crop: 'y'})
-
-# Convert month to datetime. If your months are like "2024-01", this works. If just "January", we fix next.
 df_prophet['ds'] = pd.to_datetime(df_prophet['ds'])
 df_prophet = df_prophet.dropna()
 
@@ -40,18 +33,15 @@ if len(df_prophet) < 2:
     st.error("Not enough data points for this crop/district to forecast. Need at least 2 months.")
     st.stop()
 else:
-    # Train Prophet model
-    m = Prophet(yearly_seasonality=True)
+    # MISSING ITEM 1 FIX: Disable weekly/daily seasonality
+    m = Prophet(yearly_seasonality=True, weekly_seasonality=False, daily_seasonality=False)
     m.fit(df_prophet)
     
-    # Predict 30 days into future
-    future = m.make_future_dataframe(periods=30, freq='D')
+    # MISSING ITEM 2 FIX: Use monthly if your data is monthly
+    future = m.make_future_dataframe(periods=1, freq='M')
     forecast = m.predict(future)
     
-    # Show forecast chart
     fig = m.plot(forecast)
     st.pyplot(fig)
     
-    # Show predicted price 30 days from now
-    next_30 = forecast[['ds', 'yhat']].tail(30)
-    st.write(f"Predicted price in 30 days: UGX {next_30['yhat'].iloc[-1]:.0f}")
+    st.write(f"Predicted price next month: UGX {forecast['yhat'].iloc[-1]:.0f}")
