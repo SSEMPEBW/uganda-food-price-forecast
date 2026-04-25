@@ -10,7 +10,12 @@ st.write("Predicting food prices 30 days ahead to fight hunger in Uganda")
 
 @st.cache_data
 def load_data():
+<<<<<<< HEAD
 df = pd.read_csv('data/wfp_food_prices_uga.csv')    return df
+=======
+    df = pd.read_csv('data/wfp_food_prices.csv')
+    return df
+>>>>>>> 45c5afc16fb23d381d182e21bcd48acfa77c01a6
 
 df = load_data()
 
