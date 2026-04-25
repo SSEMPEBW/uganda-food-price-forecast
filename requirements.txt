@@ -1,4 +1,11 @@
 streamlit
 pandas
+<<<<<<< HEAD
 prophet
 matplotlib
+=======
+matplotlib
+folium
+streamlit-folium
+prophet==1.1.4
+>>>>>>> 06fde481b16bbfb4e850b45206931d5a78817d6e
