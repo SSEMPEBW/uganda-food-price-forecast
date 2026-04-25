@@ -1,57 +1,47 @@
 import streamlit as st
 import pandas as pd
-import matplotlib.pyplot as plt
-import folium
-from streamlit_folium import st_folium
 from prophet import Prophet
+import matplotlib.pyplot as plt
 
-st.title("Uganda Food Price Forecast")
-st.caption("Built for WFP/FAO - SDG 2: Zero Hunger")
-st.caption("By Allan Ssempebwa, for the God of Abraham, Isaac, and Israel")
+st.set_page_config(page_title="Zero Hunger - Uganda Food Price Forecast", layout="wide")
 
-try:
-    df = pd.read_csv('data/prices.csv')
-    st.success(f"CSV loaded: {len(df['district'].unique())} districts, {len(df)} records")
-except FileNotFoundError:
-    st.error("ERROR: prices.csv not found in data folder")
-    st.stop()
+st.title("Zero Hunger: Uganda Food Price Forecast")
+st.write("Predicting food prices 30 days ahead to fight hunger in Uganda")
 
-district_list = df['district'].unique()
-district_input = st.selectbox("Select district to forecast", district_list)
+# Load data - replace 'food_prices.csv' with your actual file
+@st.cache_data
+def load_data():
+    df = pd.read_csv('food_prices.csv')
+    return df
 
-# Filter by district first
-df_district = df[df['district'] == district_input].copy()
+df = load_data()
 
-# 30-Day Price Forecast with Prophet
-st.subheader("30-Day Price Forecast")
+st.subheader("Raw Data")
+st.dataframe(df.tail())
 
-# These are your actual columns from the screenshot
-crop_options = ['maize_kg', 'beans_kg', 'matooke_bunch']
-selected_crop = st.selectbox("Select crop to forecast", crop_options)
+# Prepare data for Prophet
+df_prophet = df[['Date', 'Price']].copy()
+df_prophet.columns = ['ds', 'y']
 
-# Build Prophet dataframe: 'month' is your date, selected_crop is your price
-df_prophet = df_district[['month', selected_crop]].rename(columns={'month': 'ds', selected_crop: 'y'})
-
-# Convert month to datetime. If your months are like "2024-01", this works. If just "January", we fix next.
+# Make sure date is datetime format
 df_prophet['ds'] = pd.to_datetime(df_prophet['ds'])
-df_prophet = df_prophet.dropna()
 
-if len(df_prophet) < 2:
-    st.error("Not enough data points for this crop/district to forecast. Need at least 2 months.")
-    st.stop()
-else:
-    # Train Prophet model
-    m = Prophet(yearly_seasonality=True)
-    m.fit(df_prophet)
-    
-    # Predict 30 days into future
-    future = m.make_future_dataframe(periods=30, freq='D')
-    forecast = m.predict(future)
-    
-    # Show forecast chart
-    fig = m.plot(forecast)
-    st.pyplot(fig)
-    
-    # Show predicted price 30 days from now
-    next_30 = forecast[['ds', 'yhat']].tail(30)
-    st.write(f"Predicted price in 30 days: UGX {next_30['yhat'].iloc[-1]:.0f}")
+# Train Prophet model - FIXED LINE 107
+m = Prophet(yearly_seasonality=True, weekly_seasonality=False, daily_seasonality=False)
+m.fit(df_prophet)
+
+# Predict 30 days into future
+future = m.make_future_dataframe(periods=30)
+forecast = m.predict(future)
+
+# Show forecast chart
+st.subheader("30-Day Price Forecast")
+fig = m.plot(forecast)
+st.pyplot(fig)
+
+# Show predicted price 30 days from now
+next_30 = forecast[['ds', 'yhat']].tail(30)
+last_pred = next_30['yhat'].iloc[-1]
+st.subheader(f"Predicted price in 30 days: UGX {last_pred:,.0f}")
+
+st.dataframe(next_30)
