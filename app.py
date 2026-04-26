@@ -1,20 +1,9 @@
 import streamlit as st
 import pandas as pd
+from statsmodels.tsa.holtwinters import ExponentialSmoothing
 import matplotlib.pyplot as plt
-import logging
-import warnings
-import os
-
-# CRITICAL: Kill Prophet logging BEFORE importing Prophet
-os.environ['CMDSTAN_DEBUG'] = '0'
-logging.getLogger('prophet').setLevel(logging.CRITICAL)
-logging.getLogger('cmdstanpy').setLevel(logging.CRITICAL)
-warnings.filterwarnings('ignore')
-
-from prophet import Prophet
 
 st.set_page_config(page_title="Zero Hunger - Uganda Food Price Forecast")
-
 st.title("Zero Hunger: Uganda Food Price Forecast")
 st.write("Predicting food prices 30 days ahead to fight hunger in Uganda")
 
@@ -23,11 +12,9 @@ def load_data():
     df = pd.read_csv('data/wfp_food_prices_uga.csv')
     df['date'] = pd.to_datetime(df['date'])
     df = df.rename(columns={'admin1': 'district', 'date': 'month', 'price': 'value'})
-    df = df.dropna(subset=['district', 'commodity', 'value'])
-    return df
+    return df.dropna(subset=['district', 'commodity', 'value'])
 
 df = load_data()
-
 st.subheader("Raw WFP Data Preview")
 st.dataframe(df.tail())
 
@@ -47,42 +34,34 @@ if len(available_crops) == 0:
 
 selected_crop = st.selectbox("2. Select crop to forecast", available_crops)
 df_crop = df_district[df_district['commodity'] == selected_crop][['month', 'value']].copy()
+df_crop = df_crop.groupby('month')['value'].mean().reset_index()
+df_crop = df_crop.set_index('month').asfreq('MS').fillna(method='ffill')
 
-df_prophet = df_crop.rename(columns={'month': 'ds', 'value': 'y'})
-df_prophet = df_prophet.sort_values('ds')
-df_prophet = df_prophet.groupby('ds')['y'].mean().reset_index()
-
-if len(df_prophet) < 4:
+if len(df_crop) < 4:
     st.warning(f"Not enough data points for {selected_crop} in {district_input}. Need at least 4 months.")
-    st.dataframe(df_prophet)
+    st.dataframe(df_crop)
 else:
-    # Disable logging right before Prophet init
-    logging.disable(logging.CRITICAL)
-    
-    m = Prophet(yearly_seasonality=True, weekly_seasonality=False, daily_seasonality=False)
-    m.fit(df_prophet)
-    
-    # Re-enable logging after Prophet
-    logging.disable(logging.NOTSET)
-    
-    future = m.make_future_dataframe(periods=30, freq='D')
-    forecast = m.predict(future)
+    model = ExponentialSmoothing(
+        df_crop['value'], 
+        trend='add', 
+        seasonal='add', 
+        seasonal_periods=12
+    )
+    fit = model.fit()
+    forecast = fit.forecast(30)
     
     st.write(f"### Forecast for {selected_crop} in {district_input}")
-    fig1 = m.plot(forecast)
+    fig, ax = plt.subplots(figsize=(10, 6))
+    df_crop['value'].plot(ax=ax, label='Historical Price', linewidth=2)
+    forecast.plot(ax=ax, label='30-Day Forecast', linewidth=2, linestyle='--')
     plt.ylabel('Price (UGX)')
     plt.xlabel('Date')
-    st.pyplot(fig1)
-    
-    st.write("### Forecast Components")
-    fig2 = m.plot_components(forecast)
-    st.pyplot(fig2)
+    plt.legend()
+    plt.title(f'{selected_crop} Price Forecast')
+    st.pyplot(fig)
     
     st.write("### Next 30 Days Price Prediction")
-    forecast_table = forecast[['ds', 'yhat_lower', 'yhat_upper']].tail(30)
-    forecast_table = forecast_table.rename(columns={
-        'ds': 'Date', 'yhat': 'Predicted_Price', 
-        'yhat_lower': 'Lower_Bound', 'yhat_upper': 'Upper_Bound'
-    })
-    forecast_table['Date'] = forecast_table['Date'].dt.date
-    st.dataframe(forecast_table, use_container_width=True)
+    forecast_df = forecast.reset_index()
+    forecast_df.columns = ['Date', 'Predicted_Price']
+    forecast_df['Date'] = forecast_df['Date'].dt.date
+    st.dataframe(forecast_df, use_container_width=True)
