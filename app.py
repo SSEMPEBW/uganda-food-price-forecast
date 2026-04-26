@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 from statsmodels.tsa.holtwinters import ExponentialSmoothing
 import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
 import folium
 from streamlit_folium import st_folium
 import requests
@@ -38,15 +39,24 @@ def get_rainfall_forecast(lat, lon):
             "daily": "precipitation_sum",
             "forecast_days": 30, "timezone": "Africa/Kampala"
         }
-        response = requests.get(url, params=params, timeout=10)
+        response = requests.get(url, params=params, timeout=15)
+        response.raise_for_status()
         data = response.json()
+        
+        if 'daily' not in data or 'precipitation_sum' not in data['daily']:
+            return None, "API returned no daily precipitation data"
+            
         rain_df = pd.DataFrame({
             'Date': pd.to_datetime(data['daily']['time']),
             'Rainfall_mm': data['daily']['precipitation_sum']
         })
-        return rain_df
-    except:
-        return None
+        return rain_df, "Success"
+    except requests.exceptions.Timeout:
+        return None, "API timeout - Open-Meteo took too long"
+    except requests.exceptions.RequestException as e:
+        return None, f"API Error: {str(e)}"
+    except Exception as e:
+        return None, f"Processing error: {str(e)}"
 
 def create_uganda_map(df):
     m = folium.Map(location=[1.3733, 32.2903], zoom_start=6, tiles='OpenStreetMap')
@@ -105,7 +115,7 @@ col3, col4 = st.columns(2)
 with col3:
     district_list = sorted(df['district'].dropna().unique())
     district_input = st.selectbox("1. Select District", district_list, 
-                                 index=district_list.index('Wakiso') if 'Wakiso' in district_list else 0)
+                                 index=district_list.index('Kampala') if 'Kampala' in district_list else 0)
 
 df_district = df[df['district'] == district_input].copy()
 
@@ -116,11 +126,13 @@ with col4:
         st.stop()
     selected_crop = st.selectbox("2. Select Crop", available_crops)
 
-rain_df = None
+rain_df, rain_status = None, "Not checked"
 if district_input in district_coords:
     lat, lon = district_coords[district_input]
     with st.spinner(f"Fetching rainfall for {district_input}..."):
-        rain_df = get_rainfall_forecast(lat, lon)
+        rain_df, rain_status = get_rainfall_forecast(lat, lon)
+    if rain_status!= "Success":
+        st.warning(f"🌧️ Rain data issue: {rain_status}")
 
 df_crop = df_district[df_district['commodity'] == selected_crop][['month', 'value']].copy()
 df_crop = df_crop.groupby('month')['value'].mean().reset_index()
@@ -166,10 +178,9 @@ try:
         elif total_rain > 300:
             st.info(f"🌊 **HEAVY RAIN**: {total_rain:.1f}mm expected - Potential flooding risk")
     
-    # FIXED GRAPH SECTION - BOTH GRAPHS ALWAYS SHOW
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10))
     
-    # Top graph: Price - always shows
+    # Price graph
     df_crop['value'].plot(ax=ax1, label='Historical Price', linewidth=2.5, color='#1f77b4')
     forecast.plot(ax=ax1, label='30-Day Forecast', linewidth=2.5, linestyle='--', color='#ff7f0e')
     ax1.set_ylabel('Price (UGX)', fontsize=12)
@@ -177,16 +188,22 @@ try:
     ax1.legend()
     ax1.grid(True, alpha=0.3)
     
-    # Bottom graph: Rain - ALWAYS shows even if no data
-    if rain_df is not None and not rain_df.empty and rain_df['Rainfall_mm'].sum() > 0.1:
+    # Rain graph - ALWAYS PLOT SOMETHING
+    if rain_df is not None and not rain_df.empty:
         total_rain = rain_df['Rainfall_mm'].sum()
         ax2.bar(rain_df['Date'], rain_df['Rainfall_mm'], color='#4682B4', alpha=0.7, label='Daily Rainfall')
         ax2.set_ylabel('Rainfall (mm)', fontsize=12)
         ax2.set_title(f'30-Day Rainfall Forecast - {district_input}: {total_rain:.1f}mm Total', fontsize=14, fontweight='bold')
         ax2.legend()
         ax2.grid(True, alpha=0.3, axis='y')
+        # Fix date formatting on x-axis
+        ax2.xaxis.set_major_formatter(mdates.DateFormatter('%b %d'))
+        ax2.xaxis.set_major_locator(mdates.WeekdayLocator(interval=1))
+        plt.setp(ax2.xaxis.get_majorticklabels(), rotation=45)
+        if total_rain < 1:
+            ax2.set_ylim(0, 5)
     else:
-        ax2.text(0.5, 0.5, f'☀️ DRY SPELL OR NO DATA\n0.0mm rain forecast next 30 days\n\nDistricts with rain data: Kampala, Wakiso, Mbarara', 
+        ax2.text(0.5, 0.5, f'🌧️ RAINFALL DATA UNAVAILABLE\n\n{rain_status}\n\nTry again later or check internet connection', 
                 ha='center', va='center', transform=ax2.transAxes, fontsize=14, color='red', weight='bold')
         ax2.set_ylabel('Rainfall (mm)', fontsize=12)
         ax2.set_title(f'30-Day Rainfall Forecast - {district_input}', fontsize=14, fontweight='bold')
@@ -212,7 +229,7 @@ try:
             st.download_button("📥 Download Rain CSV", rain_df.to_csv(index=False),
                               f"{district_input}_rainfall.csv", "text/csv")
         else:
-            st.info("No rainfall data available for this district.")
+            st.info(f"No rainfall data available. Reason: {rain_status}")
 
 except Exception as e:
     st.error(f"Could not create forecast: {str(e)}")
