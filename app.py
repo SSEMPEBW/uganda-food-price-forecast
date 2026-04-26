@@ -2,25 +2,16 @@ import streamlit as st
 import pandas as pd
 from statsmodels.tsa.holtwinters import ExponentialSmoothing
 import matplotlib.pyplot as plt
-import folium
-from streamlit_folium import st_folium
-import requests
 
-st.set_page_config(
-    page_title="Zero Hunger T420 - By Ssempebwa Allan",
-    page_icon="🌾",
-    layout="wide"
-)
+st.set_page_config(page_title="Zero Hunger T420 - By Ssempebwa Allan", page_icon="🌾", layout="wide")
 
 st.markdown("""
 <div style='text-align: center; padding: 1rem; background: linear-gradient(90deg, #228B22, #FF8C00); border-radius: 10px; margin-bottom: 1rem;'>
-    <h1 style='color: white; margin: 0;'>🌾🌧️ Zero Hunger T420</h1>
-    <h3 style='color: white; margin: 0;'>Food Price + Rainfall Forecast System</h3>
+    <h1 style='color: white; margin: 0;'>🌾 Zero Hunger T420</h1>
+    <h3 style='color: white; margin: 0;'>Food Price Forecast System</h3>
     <p style='color: white; margin: 0.5rem 0 0; font-size: 18px;'><b>Built by Ssempebwa Allan</b> | Fighting Hunger with Data Science 🇺🇬</p>
 </div>
 """, unsafe_allow_html=True)
-
-st.write("Predicting food prices and rainfall 30 days ahead to fight hunger in Uganda")
 
 @st.cache_data
 def load_data():
@@ -29,174 +20,73 @@ def load_data():
     df = df.rename(columns={'admin1': 'district', 'date': 'month', 'price': 'value'})
     return df.dropna(subset=['district', 'commodity', 'value'])
 
-@st.cache_data
-def get_rainfall_forecast(lat, lon):
-    try:
-        url = "https://api.open-meteo.com/v1/forecast"
-        params = {
-            "latitude": lat, "longitude": lon,
-            "daily": "precipitation_sum",
-            "forecast_days": 30, "timezone": "Africa/Kampala"
-        }
-        response = requests.get(url, params=params, timeout=10)
-        data = response.json()
-        rain_df = pd.DataFrame({
-            'Date': pd.to_datetime(data['daily']['time']),
-            'Rainfall_mm': data['daily']['precipitation_sum']
-        })
-        return rain_df
-    except:
-        return None
-
-def create_uganda_map(df):
-    m = folium.Map(location=[1.3733, 32.2903], zoom_start=6, tiles='OpenStreetMap')
-    district_coords = {
-        'Kampala': [0.3476, 32.5825], 'Wakiso': [0.4000, 32.4800], 
-        'Mbarara': [-0.6072, 30.6545], 'Gulu': [2.7746, 32.2989],
-        'Mbale': [1.0827, 34.1755], 'Jinja': [0.4244, 33.2042],
-        'Lira': [2.2350, 32.9097], 'Masaka': [-0.3331, 31.7331],
-        'Arua': [3.0201, 30.9110], 'Fort Portal': [0.6710, 30.2750],
-        'Hoima': [1.4356, 31.3439], 'Soroti': [1.7145, 33.6119],
-        'Kabale': [-1.2486, 29.9897], 'Tororo': [0.6920, 34.1807],
-        'Kasese': [0.1833, 30.0833], 'Iganga': [0.6127, 33.4833]
-    }
-    district_counts = df['district'].value_counts()
-    for district in district_counts.index:
-        if district in district_coords:
-            count = district_counts.get(district, 0)
-            folium.CircleMarker(
-                location=district_coords[district],
-                radius=8 + (count / 100),
-                popup=f"<b>{district}</b><br>{count} records",
-                color='#228B22' if count > 100 else '#FF8C00',
-                fill=True, fillColor='#228B22' if count > 100 else '#FF8C00',
-                fillOpacity=0.7
-            ).add_to(m)
-    return m, district_coords
-
 df = load_data()
-
-col1, col2 = st.columns([2, 1])
-with col1:
-    st.subheader("🗺️ Uganda Food Price Data Coverage")
-    st.write("**Green** = 100+ records | **Orange** = Limited data")
-    uganda_map, district_coords = create_uganda_map(df)
-    try:
-        st_folium(uganda_map, width=None, height=400)
-    except Exception as e:
-        st.warning("🗺️ Interactive map temporarily unavailable")
-        st.info("💡 All forecasts below still work perfectly. Use the dropdowns to select districts.")
-
-with col2:
-    st.subheader("📊 Data Stats")
-    st.metric("Total Records", f"{len(df):,}")
-    st.metric("Districts Covered", df['district'].nunique())
-    st.metric("Crops Tracked", df['commodity'].nunique())
-    st.metric("Date Range", f"{df['month'].dt.year.min()} - {df['month'].dt.year.max()}")
-
-st.divider()
-
 KEY_CROPS = ['Maize', 'Beans', 'Rice', 'Cassava', 'Matooke', 'Sorghum']
 df = df[df['commodity'].isin(KEY_CROPS)]
 
-st.subheader("📈 30-Day Forecast: Price + Rainfall")
+st.subheader("📈 30-Day Price Forecast")
+col1, col2 = st.columns(2)
 
-col3, col4 = st.columns(2)
-with col3:
+with col1:
     district_list = sorted(df['district'].dropna().unique())
-    district_input = st.selectbox("1. Select District", district_list, 
-                                 index=district_list.index('Wakiso') if 'Wakiso' in district_list else 0)
+    district_input = st.selectbox("1. Select District", district_list)
 
 df_district = df[df['district'] == district_input].copy()
 
-with col4:
+with col2:
     available_crops = sorted(df_district['commodity'].unique())
     if len(available_crops) == 0:
-        st.error(f"No data for major crops in {district_input}. Pick another district.")
+        st.error(f"No data for major crops in {district_input}")
         st.stop()
     selected_crop = st.selectbox("2. Select Crop", available_crops)
-
-rain_df = None
-if district_input in district_coords:
-    lat, lon = district_coords[district_input]
-    with st.spinner(f"Fetching rainfall for {district_input}..."):
-        rain_df = get_rainfall_forecast(lat, lon)
 
 df_crop = df_district[df_district['commodity'] == selected_crop][['month', 'value']].copy()
 df_crop = df_crop.groupby('month')['value'].mean().reset_index()
 df_crop = df_crop.set_index('month').sort_index()
 
 if len(df_crop) < 6:
-    st.error(f"❌ Not enough price data for {selected_crop} in {district_input}. Only {len(df_crop)} months found.")
+    st.error(f"❌ Not enough data. Only {len(df_crop)} months found.")
     st.stop()
 
 df_crop = df_crop.resample('MS').mean()
 df_crop['value'] = df_crop['value'].interpolate(method='linear')
 
-try:
-    model = ExponentialSmoothing(df_crop['value'], trend='add', seasonal_periods=12)
-    fit = model.fit(optimized=True)
-    forecast = fit.forecast(30)
-    
-    last_price = df_crop['value'].iloc[-1]
-    next_price = forecast.iloc[0]
-    price_change = ((next_price - last_price) / last_price) * 100
-    
-    m1, m2, m3, m4 = st.columns(4)
-    m1.metric("Current Price", f"{last_price:.0f} UGX")
-    m2.metric("30-Day Forecast", f"{next_price:.0f} UGX", f"{price_change:+.1f}%")
-    m3.metric("Data Points", f"{len(df_crop)} months")
-    
-    if rain_df is not None:
-        total_rain = rain_df['Rainfall_mm'].sum()
-        m4.metric("30-Day Rain", f"{total_rain:.0f} mm")
-    
-    if price_change > 10:
-        st.warning(f"⚠️ **Price Alert**: {selected_crop} prices predicted to rise {price_change:.1f}%")
-    if rain_df is not None and rain_df['Rainfall_mm'].sum() < 50:
-        st.error(f"🌵 **Drought Risk**: Only {rain_df['Rainfall_mm'].sum():.0f}mm rain expected")
-    elif rain_df is not None and rain_df['Rainfall_mm'].sum() > 300:
-        st.info(f"🌊 **Heavy Rain**: {rain_df['Rainfall_mm'].sum():.0f}mm expected")
-    
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10), sharex=True)
-    df_crop['value'].plot(ax=ax1, label='Historical Price', linewidth=2.5, color='#1f77b4')
-    forecast.plot(ax=ax1, label='30-Day Forecast', linewidth=2.5, linestyle='--', color='#ff7f0e')
-    ax1.set_ylabel('Price (UGX)', fontsize=12)
-    ax1.set_title(f'{selected_crop} Price Forecast - {district_input}', fontsize=14, fontweight='bold')
-    ax1.legend()
-    ax1.grid(True, alpha=0.3)
-    
-    if rain_df is not None:
-        ax2.bar(rain_df['Date'], rain_df['Rainfall_mm'], color='#4682B4', alpha=0.7)
-        ax2.set_ylabel('Rainfall (mm)', fontsize=12)
-        ax2.set_title(f'30-Day Rainfall Forecast - {district_input}', fontsize=14, fontweight='bold')
-        ax2.grid(True, alpha=0.3, axis='y')
-    ax2.set_xlabel('Date', fontsize=12)
-    plt.tight_layout()
-    st.pyplot(fig)
-    
-    tab1, tab2 = st.tabs(["📅 Price Forecast", "🌧️ Rainfall Forecast"])
-    with tab1:
-        forecast_df = forecast.reset_index()
-        forecast_df.columns = ['Date', 'Predicted_Price_UGX']
-        forecast_df['Date'] = forecast_df['Date'].dt.date
-        forecast_df['Predicted_Price_UGX'] = forecast_df['Predicted_Price_UGX'].round(0).astype(int)
-        st.dataframe(forecast_df, use_container_width=True, hide_index=True)
-        st.download_button("📥 Download Price CSV", forecast_df.to_csv(index=False),
-                          f"{district_input}_{selected_crop}_price.csv", "text/csv")
-    with tab2:
-        if rain_df is not None:
-            st.dataframe(rain_df, use_container_width=True, hide_index=True)
-            st.download_button("📥 Download Rain CSV", rain_df.to_csv(index=False),
-                              f"{district_input}_rainfall.csv", "text/csv")
+model = ExponentialSmoothing(df_crop['value'], trend='add', seasonal_periods=12)
+fit = model.fit(optimized=True)
+forecast = fit.forecast(30)
 
-except Exception as e:
-    st.error(f"Could not create forecast: {str(e)}")
+last_price = df_crop['value'].iloc[-1]
+next_price = forecast.iloc[0]
+price_change = ((next_price - last_price) / last_price) * 100
+
+m1, m2, m3 = st.columns(3)
+m1.metric("Current Price", f"{last_price:.0f} UGX")
+m2.metric("30-Day Forecast", f"{next_price:.0f} UGX", f"{price_change:+.1f}%")
+m3.metric("Data Points", f"{len(df_crop)} months")
+
+if price_change > 10:
+    st.warning(f"⚠️ **Price Alert**: {selected_crop} prices predicted to rise {price_change:.1f}%")
+
+fig, ax = plt.subplots(figsize=(12, 6))
+df_crop['value'].plot(ax=ax, label='Historical', linewidth=2.5, color='#1f77b4')
+forecast.plot(ax=ax, label='30-Day Forecast', linewidth=2.5, linestyle='--', color='#ff7f0e')
+plt.ylabel('Price (UGX)', fontsize=12)
+plt.title(f'{selected_crop} Price Forecast - {district_input}', fontsize=14, fontweight='bold')
+plt.legend()
+plt.grid(True, alpha=0.3)
+st.pyplot(fig)
+
+forecast_df = forecast.reset_index()
+forecast_df.columns = ['Date', 'Predicted_Price_UGX']
+forecast_df['Date'] = forecast_df['Date'].dt.date
+st.dataframe(forecast_df, use_container_width=True, hide_index=True)
+st.download_button("📥 Download CSV", forecast_df.to_csv(index=False),
+                  f"{district_input}_{selected_crop}_forecast.csv", "text/csv")
 
 st.divider()
 st.markdown("""
 <div style='text-align: center; padding: 1rem; background-color: #f0f2f6; border-radius: 10px;'>
     <p style='margin: 0;'><b>Zero Hunger T420</b> | Built by <b>Ssempebwa Allan</b></p>
-    <p style='margin: 0; font-size: 14px;'>Data: WFP Uganda + Open-Meteo | Fighting Hunger with Data Science 🇺🇬🌧️</p>
+    <p style='margin: 0; font-size: 14px;'>Data: WFP Uganda | Fighting Hunger with Data Science 🇺🇬</p>
 </div>
 """, unsafe_allow_html=True)
