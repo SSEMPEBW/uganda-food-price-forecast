@@ -4,7 +4,7 @@ from statsmodels.tsa.holtwinters import ExponentialSmoothing
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 import folium
-from streamlit_folium import folium_static # CHANGED: Use folium_static instead
+from streamlit_folium import folium_static
 import requests
 
 st.set_page_config(
@@ -21,7 +21,7 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-st.write("Predicting food prices and rainfall 30 days ahead to fight hunger in Uganda")
+st.write("Predicting food prices and rainfall 16 days ahead to fight hunger in Uganda")
 
 @st.cache_data
 def load_data():
@@ -60,7 +60,15 @@ def get_rainfall_forecast(lat, lon):
         return None, f"Error: {str(e)}"
 
 def create_uganda_map(df):
-    m = folium.Map(location=[1.3733, 32.2903], zoom_start=6, tiles='OpenStreetMap')
+    # FIXED: CartoDB tiles work on Streamlit Cloud
+    m = folium.Map(
+        location=[1.3733, 32.2903], 
+        zoom_start=7,
+        tiles='CartoDB positron',
+        attr='CartoDB'
+    )
+    
+    # 22 DISTRICTS WITH COORDINATES - INCLUDING MUKONO
     district_coords = {
         'Kampala': [0.3476, 32.5825], 'Wakiso': [0.4000, 32.4800], 
         'Mbarara': [-0.6072, 30.6545], 'Gulu': [2.7746, 32.2989],
@@ -80,11 +88,13 @@ def create_uganda_map(df):
             count = district_counts.get(district, 0)
             folium.CircleMarker(
                 location=district_coords[district],
-                radius=8 + (count / 100),
+                radius=5 + (count / 150),
                 popup=f"<b>{district}</b><br>{count} records",
-                color='#228B22' if count > 100 else '#FF8C00',
-                fill=True, fillColor='#228B22' if count > 100 else '#FF8C00',
-                fillOpacity=0.7
+                color='#000000',
+                weight=1,
+                fill=True, 
+                fillColor='#228B22' if count > 100 else '#FF8C00',
+                fillOpacity=0.8
             ).add_to(m)
     return m, district_coords
 
@@ -95,7 +105,6 @@ with col1:
     st.subheader("🗺️ Uganda Food Price Data Coverage")
     st.write("**Green** = 100+ records | **Orange** = Limited data")
     uganda_map, district_coords = create_uganda_map(df)
-    # FIXED: Use folium_static - works on Streamlit Cloud
     folium_static(uganda_map, width=700, height=400)
 
 with col2:
