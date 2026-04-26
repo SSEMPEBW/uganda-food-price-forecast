@@ -33,13 +33,12 @@ def load_data():
 @st.cache_data
 def get_rainfall_forecast(lat, lon):
     try:
-        # CRITICAL FIX: Force float + reduce to 16 days max for free API
         url = "https://api.open-meteo.com/v1/forecast"
         params = {
             "latitude": float(lat),
             "longitude": float(lon), 
             "daily": "precipitation_sum",
-            "forecast_days": 16 # Changed from 30 to 16 - free tier limit
+            "forecast_days": 16
         }
         response = requests.get(url, params=params, timeout=15)
         response.raise_for_status()
@@ -62,6 +61,7 @@ def get_rainfall_forecast(lat, lon):
 
 def create_uganda_map(df):
     m = folium.Map(location=[1.3733, 32.2903], zoom_start=6, tiles='OpenStreetMap')
+    # EXPANDED DISTRICT LIST - NOW INCLUDES MUKONO
     district_coords = {
         'Kampala': [0.3476, 32.5825], 'Wakiso': [0.4000, 32.4800], 
         'Mbarara': [-0.6072, 30.6545], 'Gulu': [2.7746, 32.2989],
@@ -70,7 +70,10 @@ def create_uganda_map(df):
         'Arua': [3.0201, 30.9110], 'Fort Portal': [0.6710, 30.2750],
         'Hoima': [1.4356, 31.3439], 'Soroti': [1.7145, 33.6119],
         'Kabale': [-1.2486, 29.9897], 'Tororo': [0.6920, 34.1807],
-        'Kasese': [0.1833, 30.0833], 'Iganga': [0.6127, 33.4833]
+        'Kasese': [0.1833, 30.0833], 'Iganga': [0.6127, 33.4833],
+        'Mukono': [0.3533, 32.7520], 'Mityana': [0.4008, 32.0389], # ADDED
+        'Luwero': [0.8271, 32.4950], 'Mpigi': [0.2274, 32.3285], # ADDED
+        'Bushenyi': [-0.4879, 30.2026], 'Rukungiri': [-0.7918, 29.9303] # ADDED
     }
     district_counts = df['district'].value_counts()
     for district in district_counts.index:
@@ -128,13 +131,16 @@ with col4:
         st.stop()
     selected_crop = st.selectbox("2. Select Crop", available_crops)
 
-rain_df, rain_status = None, "Not checked"
+# FIXED: Now handles districts not in coords list
+rain_df, rain_status = None, "Coordinates not available for this district"
 if district_input in district_coords:
     lat, lon = district_coords[district_input]
     with st.spinner(f"Fetching rainfall for {district_input}..."):
         rain_df, rain_status = get_rainfall_forecast(lat, lon)
     if rain_status!= "Success":
         st.error(f"🌧️ Rain API failed: {rain_status}")
+else:
+    st.warning(f"🌧️ No GPS coordinates for {district_input}. Add it to district_coords to enable rain forecast.")
 
 df_crop = df_district[df_district['commodity'] == selected_crop][['month', 'value']].copy()
 df_crop = df_crop.groupby('month')['value'].mean().reset_index()
@@ -151,7 +157,7 @@ df_crop['value'] = df_crop['value'].interpolate(method='linear')
 try:
     model = ExponentialSmoothing(df_crop['value'], trend='add', seasonal_periods=12)
     fit = model.fit(optimized=True)
-    forecast = fit.forecast(16) # Changed to 16 to match rain forecast
+    forecast = fit.forecast(16)
     
     last_price = df_crop['value'].iloc[-1]
     next_price = forecast.iloc[0]
@@ -201,7 +207,7 @@ try:
         if total_rain < 1:
             ax2.set_ylim(0, 5)
     else:
-        ax2.text(0.5, 0.5, f'🌧️ RAINFALL DATA UNAVAILABLE\n\n{rain_status}\n\nStreamlit Cloud may block external APIs', 
+        ax2.text(0.5, 0.5, f'🌧️ RAINFALL DATA UNAVAILABLE\n\n{rain_status}\n\nIf district not listed, add coordinates to code', 
                 ha='center', va='center', transform=ax2.transAxes, fontsize=14, color='red', weight='bold')
         ax2.set_ylabel('Rainfall (mm)', fontsize=12)
         ax2.set_title(f'16-Day Rainfall Forecast - {district_input}', fontsize=14, fontweight='bold')
