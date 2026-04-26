@@ -34,20 +34,30 @@ if len(available_crops) == 0:
 
 selected_crop = st.selectbox("2. Select crop to forecast", available_crops)
 df_crop = df_district[df_district['commodity'] == selected_crop][['month', 'value']].copy()
-df_crop = df_crop.groupby('month')['value'].mean().reset_index()
-df_crop = df_crop.set_index('month').asfreq('MS').fillna(method='ffill')
 
-if len(df_crop) < 4:
-    st.warning(f"Not enough data points for {selected_crop} in {district_input}. Need at least 4 months.")
-    st.dataframe(df_crop)
-else:
+# FIX: Aggregate to monthly, fill gaps, and check data length
+df_crop = df_crop.groupby('month')['value'].mean().reset_index()
+df_crop = df_crop.set_index('month').sort_index()
+
+# Only keep if we have at least 6 months of data for a real forecast
+if len(df_crop) < 6:
+    st.error(f"Not enough data for {selected_crop} in {district_input}. Only {len(df_crop)} months found. Need at least 6 months.")
+    st.write("### Available Data:")
+    st.dataframe(df_crop.reset_index())
+    st.stop()
+
+# Resample to ensure monthly frequency and fill missing months
+df_crop = df_crop.resample('MS').mean()
+df_crop['value'] = df_crop['value'].interpolate(method='linear')
+
+try:
     model = ExponentialSmoothing(
         df_crop['value'], 
         trend='add', 
         seasonal='add', 
         seasonal_periods=12
     )
-    fit = model.fit()
+    fit = model.fit(optimized=True)
     forecast = fit.forecast(30)
     
     st.write(f"### Forecast for {selected_crop} in {district_input}")
@@ -65,3 +75,7 @@ else:
     forecast_df.columns = ['Date', 'Predicted_Price']
     forecast_df['Date'] = forecast_df['Date'].dt.date
     st.dataframe(forecast_df, use_container_width=True)
+
+except Exception as e:
+    st.error(f"Could not create forecast: {str(e)}")
+    st.write("This usually means there isn't enough seasonal data. Try a different district/crop combo.")
