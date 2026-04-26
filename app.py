@@ -4,7 +4,7 @@ from statsmodels.tsa.holtwinters import ExponentialSmoothing
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 import folium
-from streamlit_folium import st_folium
+from streamlit_folium import folium_static # CHANGED: Use folium_static instead
 import requests
 
 st.set_page_config(
@@ -61,7 +61,6 @@ def get_rainfall_forecast(lat, lon):
 
 def create_uganda_map(df):
     m = folium.Map(location=[1.3733, 32.2903], zoom_start=6, tiles='OpenStreetMap')
-    # EXPANDED DISTRICT LIST - NOW INCLUDES MUKONO
     district_coords = {
         'Kampala': [0.3476, 32.5825], 'Wakiso': [0.4000, 32.4800], 
         'Mbarara': [-0.6072, 30.6545], 'Gulu': [2.7746, 32.2989],
@@ -71,9 +70,9 @@ def create_uganda_map(df):
         'Hoima': [1.4356, 31.3439], 'Soroti': [1.7145, 33.6119],
         'Kabale': [-1.2486, 29.9897], 'Tororo': [0.6920, 34.1807],
         'Kasese': [0.1833, 30.0833], 'Iganga': [0.6127, 33.4833],
-        'Mukono': [0.3533, 32.7520], 'Mityana': [0.4008, 32.0389], # ADDED
-        'Luwero': [0.8271, 32.4950], 'Mpigi': [0.2274, 32.3285], # ADDED
-        'Bushenyi': [-0.4879, 30.2026], 'Rukungiri': [-0.7918, 29.9303] # ADDED
+        'Mukono': [0.3533, 32.7520], 'Mityana': [0.4008, 32.0389],
+        'Luwero': [0.8271, 32.4950], 'Mpigi': [0.2274, 32.3285],
+        'Bushenyi': [-0.4879, 30.2026], 'Rukungiri': [-0.7918, 29.9303]
     }
     district_counts = df['district'].value_counts()
     for district in district_counts.index:
@@ -96,11 +95,8 @@ with col1:
     st.subheader("🗺️ Uganda Food Price Data Coverage")
     st.write("**Green** = 100+ records | **Orange** = Limited data")
     uganda_map, district_coords = create_uganda_map(df)
-    try:
-        st_folium(uganda_map, width=None, height=400)
-    except Exception as e:
-        st.warning("🗺️ Interactive map temporarily unavailable")
-        st.info("💡 All forecasts below still work perfectly. Use the dropdowns to select districts.")
+    # FIXED: Use folium_static - works on Streamlit Cloud
+    folium_static(uganda_map, width=700, height=400)
 
 with col2:
     st.subheader("📊 Data Stats")
@@ -131,7 +127,6 @@ with col4:
         st.stop()
     selected_crop = st.selectbox("2. Select Crop", available_crops)
 
-# FIXED: Now handles districts not in coords list
 rain_df, rain_status = None, "Coordinates not available for this district"
 if district_input in district_coords:
     lat, lon = district_coords[district_input]
@@ -140,7 +135,7 @@ if district_input in district_coords:
     if rain_status!= "Success":
         st.error(f"🌧️ Rain API failed: {rain_status}")
 else:
-    st.warning(f"🌧️ No GPS coordinates for {district_input}. Add it to district_coords to enable rain forecast.")
+    st.warning(f"🌧️ No GPS coordinates for {district_input}. Rain forecast disabled.")
 
 df_crop = df_district[df_district['commodity'] == selected_crop][['month', 'value']].copy()
 df_crop = df_crop.groupby('month')['value'].mean().reset_index()
@@ -207,7 +202,7 @@ try:
         if total_rain < 1:
             ax2.set_ylim(0, 5)
     else:
-        ax2.text(0.5, 0.5, f'🌧️ RAINFALL DATA UNAVAILABLE\n\n{rain_status}\n\nIf district not listed, add coordinates to code', 
+        ax2.text(0.5, 0.5, f'🌧️ RAINFALL DATA UNAVAILABLE\n\n{rain_status}', 
                 ha='center', va='center', transform=ax2.transAxes, fontsize=14, color='red', weight='bold')
         ax2.set_ylabel('Rainfall (mm)', fontsize=12)
         ax2.set_title(f'16-Day Rainfall Forecast - {district_input}', fontsize=14, fontweight='bold')
