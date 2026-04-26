@@ -33,12 +33,13 @@ def load_data():
 @st.cache_data
 def get_rainfall_forecast(lat, lon):
     try:
+        # CRITICAL FIX: Force float + reduce to 16 days max for free API
         url = "https://api.open-meteo.com/v1/forecast"
         params = {
-            "latitude": lat, 
-            "longitude": lon,
+            "latitude": float(lat),
+            "longitude": float(lon), 
             "daily": "precipitation_sum",
-            "forecast_days": 30
+            "forecast_days": 16 # Changed from 30 to 16 - free tier limit
         }
         response = requests.get(url, params=params, timeout=15)
         response.raise_for_status()
@@ -53,13 +54,11 @@ def get_rainfall_forecast(lat, lon):
         })
         return rain_df, "Success"
     except requests.exceptions.HTTPError as e:
-        return None, f"HTTP Error {e.response.status_code}: {e.response.reason}"
+        return None, f"HTTP {e.response.status_code}: {e.response.reason}"
     except requests.exceptions.Timeout:
         return None, "API timeout - Open-Meteo took too long"
-    except requests.exceptions.RequestException as e:
-        return None, f"API Error: {str(e)}"
     except Exception as e:
-        return None, f"Processing error: {str(e)}"
+        return None, f"Error: {str(e)}"
 
 def create_uganda_map(df):
     m = folium.Map(location=[1.3733, 32.2903], zoom_start=6, tiles='OpenStreetMap')
@@ -112,7 +111,7 @@ st.divider()
 KEY_CROPS = ['Maize', 'Beans', 'Rice', 'Cassava', 'Matooke', 'Sorghum']
 df = df[df['commodity'].isin(KEY_CROPS)]
 
-st.subheader("📈 30-Day Forecast: Price + Rainfall")
+st.subheader("📈 16-Day Forecast: Price + Rainfall")
 
 col3, col4 = st.columns(2)
 with col3:
@@ -135,7 +134,7 @@ if district_input in district_coords:
     with st.spinner(f"Fetching rainfall for {district_input}..."):
         rain_df, rain_status = get_rainfall_forecast(lat, lon)
     if rain_status!= "Success":
-        st.warning(f"🌧️ Rain data issue: {rain_status}")
+        st.error(f"🌧️ Rain API failed: {rain_status}")
 
 df_crop = df_district[df_district['commodity'] == selected_crop][['month', 'value']].copy()
 df_crop = df_crop.groupby('month')['value'].mean().reset_index()
@@ -152,7 +151,7 @@ df_crop['value'] = df_crop['value'].interpolate(method='linear')
 try:
     model = ExponentialSmoothing(df_crop['value'], trend='add', seasonal_periods=12)
     fit = model.fit(optimized=True)
-    forecast = fit.forecast(30)
+    forecast = fit.forecast(16) # Changed to 16 to match rain forecast
     
     last_price = df_crop['value'].iloc[-1]
     next_price = forecast.iloc[0]
@@ -160,14 +159,14 @@ try:
     
     m1, m2, m3, m4 = st.columns(4)
     m1.metric("Current Price", f"{last_price:.0f} UGX")
-    m2.metric("30-Day Forecast", f"{next_price:.0f} UGX", f"{price_change:+.1f}%")
+    m2.metric("16-Day Forecast", f"{next_price:.0f} UGX", f"{price_change:+.1f}%")
     m3.metric("Data Points", f"{len(df_crop)} months")
     
     if rain_df is not None and not rain_df.empty:
         total_rain = rain_df['Rainfall_mm'].sum()
-        m4.metric("30-Day Rain", f"{total_rain:.1f} mm")
+        m4.metric("16-Day Rain", f"{total_rain:.1f} mm")
     else:
-        m4.metric("30-Day Rain", "0.0 mm")
+        m4.metric("16-Day Rain", "0.0 mm")
     
     if price_change > 10:
         st.warning(f"⚠️ **Price Alert**: {selected_crop} prices predicted to rise {price_change:.1f}%")
@@ -176,15 +175,15 @@ try:
     
     if rain_df is not None and not rain_df.empty:
         total_rain = rain_df['Rainfall_mm'].sum()
-        if total_rain < 50:
-            st.error(f"🌵 **DROUGHT RISK**: Only {total_rain:.1f}mm rain expected next 30 days - High risk for {selected_crop}")
-        elif total_rain > 300:
+        if total_rain < 30:
+            st.error(f"🌵 **DROUGHT RISK**: Only {total_rain:.1f}mm rain expected next 16 days - High risk for {selected_crop}")
+        elif total_rain > 150:
             st.info(f"🌊 **HEAVY RAIN**: {total_rain:.1f}mm expected - Potential flooding risk")
     
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10))
     
     df_crop['value'].plot(ax=ax1, label='Historical Price', linewidth=2.5, color='#1f77b4')
-    forecast.plot(ax=ax1, label='30-Day Forecast', linewidth=2.5, linestyle='--', color='#ff7f0e')
+    forecast.plot(ax=ax1, label='16-Day Forecast', linewidth=2.5, linestyle='--', color='#ff7f0e')
     ax1.set_ylabel('Price (UGX)', fontsize=12)
     ax1.set_title(f'{selected_crop} Price Forecast - {district_input}', fontsize=14, fontweight='bold')
     ax1.legend()
@@ -194,19 +193,18 @@ try:
         total_rain = rain_df['Rainfall_mm'].sum()
         ax2.bar(rain_df['Date'], rain_df['Rainfall_mm'], color='#4682B4', alpha=0.7, label='Daily Rainfall')
         ax2.set_ylabel('Rainfall (mm)', fontsize=12)
-        ax2.set_title(f'30-Day Rainfall Forecast - {district_input}: {total_rain:.1f}mm Total', fontsize=14, fontweight='bold')
+        ax2.set_title(f'16-Day Rainfall Forecast - {district_input}: {total_rain:.1f}mm Total', fontsize=14, fontweight='bold')
         ax2.legend()
         ax2.grid(True, alpha=0.3, axis='y')
         ax2.xaxis.set_major_formatter(mdates.DateFormatter('%b %d'))
-        ax2.xaxis.set_major_locator(mdates.WeekdayLocator(interval=1))
         plt.setp(ax2.xaxis.get_majorticklabels(), rotation=45)
         if total_rain < 1:
             ax2.set_ylim(0, 5)
     else:
-        ax2.text(0.5, 0.5, f'🌧️ RAINFALL DATA UNAVAILABLE\n\n{rain_status}\n\nTry again later or check internet connection', 
+        ax2.text(0.5, 0.5, f'🌧️ RAINFALL DATA UNAVAILABLE\n\n{rain_status}\n\nStreamlit Cloud may block external APIs', 
                 ha='center', va='center', transform=ax2.transAxes, fontsize=14, color='red', weight='bold')
         ax2.set_ylabel('Rainfall (mm)', fontsize=12)
-        ax2.set_title(f'30-Day Rainfall Forecast - {district_input}', fontsize=14, fontweight='bold')
+        ax2.set_title(f'16-Day Rainfall Forecast - {district_input}', fontsize=14, fontweight='bold')
         ax2.set_ylim(0, 5)
         ax2.grid(True, alpha=0.3, axis='y')
     
