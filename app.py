@@ -35,9 +35,10 @@ def get_rainfall_forecast(lat, lon):
     try:
         url = "https://api.open-meteo.com/v1/forecast"
         params = {
-            "latitude": lat, "longitude": lon,
+            "latitude": lat, 
+            "longitude": lon,
             "daily": "precipitation_sum",
-            "forecast_days": 30, "timezone": "Africa/Kampala"
+            "forecast_days": 30
         }
         response = requests.get(url, params=params, timeout=15)
         response.raise_for_status()
@@ -51,6 +52,8 @@ def get_rainfall_forecast(lat, lon):
             'Rainfall_mm': data['daily']['precipitation_sum']
         })
         return rain_df, "Success"
+    except requests.exceptions.HTTPError as e:
+        return None, f"HTTP Error {e.response.status_code}: {e.response.reason}"
     except requests.exceptions.Timeout:
         return None, "API timeout - Open-Meteo took too long"
     except requests.exceptions.RequestException as e:
@@ -180,7 +183,6 @@ try:
     
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10))
     
-    # Price graph
     df_crop['value'].plot(ax=ax1, label='Historical Price', linewidth=2.5, color='#1f77b4')
     forecast.plot(ax=ax1, label='30-Day Forecast', linewidth=2.5, linestyle='--', color='#ff7f0e')
     ax1.set_ylabel('Price (UGX)', fontsize=12)
@@ -188,7 +190,6 @@ try:
     ax1.legend()
     ax1.grid(True, alpha=0.3)
     
-    # Rain graph - ALWAYS PLOT SOMETHING
     if rain_df is not None and not rain_df.empty:
         total_rain = rain_df['Rainfall_mm'].sum()
         ax2.bar(rain_df['Date'], rain_df['Rainfall_mm'], color='#4682B4', alpha=0.7, label='Daily Rainfall')
@@ -196,7 +197,6 @@ try:
         ax2.set_title(f'30-Day Rainfall Forecast - {district_input}: {total_rain:.1f}mm Total', fontsize=14, fontweight='bold')
         ax2.legend()
         ax2.grid(True, alpha=0.3, axis='y')
-        # Fix date formatting on x-axis
         ax2.xaxis.set_major_formatter(mdates.DateFormatter('%b %d'))
         ax2.xaxis.set_major_locator(mdates.WeekdayLocator(interval=1))
         plt.setp(ax2.xaxis.get_majorticklabels(), rotation=45)
